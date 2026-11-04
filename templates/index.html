@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cantina CESAR</title>
+<style>
+  :root { --tinta:#1b2433; --suave:#5d6a7e; --fundo:#f3f6fa; --cartao:#fff; --linha:#d9e0ea;
+          --ok:#0b8f6c; --alerta:#c27a00; --ruim:#c9392f; --marca:#2447d6; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Segoe UI", system-ui, sans-serif; background:var(--fundo); color:var(--tinta); }
+  header { padding:28px 20px 18px; max-width:980px; margin:0 auto; }
+  h1 { margin:0 0 4px; font-size:1.9rem; letter-spacing:-.02em; }
+  header p { margin:0; color:var(--suave); }
+  main { max-width:980px; margin:0 auto; padding:0 20px 60px; display:grid; gap:20px; grid-template-columns:1.3fr 1fr; }
+  @media (max-width:800px){ main{ grid-template-columns:1fr; } }
+  section { background:var(--cartao); border:1px solid var(--linha); border-radius:10px; padding:18px; }
+  h2 { margin:0 0 12px; font-size:1.05rem; }
+  .item { display:flex; align-items:center; gap:10px; padding:10px 0; border-top:1px solid var(--linha); }
+  .item:first-of-type { border-top:0; }
+  .item .nome { flex:1; }
+  .item small { color:var(--suave); display:block; }
+  .qtd { display:flex; align-items:center; gap:8px; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--linha); background:#fff; padding:6px 12px; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--marca); outline-offset:2px; }
+  .qtd button { width:34px; height:34px; padding:0; font-size:1.1rem; }
+  .primario { background:var(--marca); color:#fff; border-color:var(--marca); width:100%; padding:12px; font-weight:600; margin-top:12px; }
+  .primario:disabled { opacity:.5; cursor:not-allowed; }
+  input[type=text] { width:100%; padding:10px; border:1px solid var(--linha); border-radius:8px; font:inherit; }
+  label.opcao { display:inline-flex; gap:6px; margin:10px 14px 0 0; }
+  .medidor { height:14px; background:#e6ebf2; border-radius:7px; overflow:hidden; margin:8px 0 6px; }
+  .medidor > div { height:100%; width:0; background:var(--ok); transition:width .3s, background .3s; }
+  .tempo { font-size:2.2rem; font-weight:700; letter-spacing:-.02em; }
+  .ok { color:var(--ok); } .alerta { color:var(--alerta); } .ruim { color:var(--ruim); }
+  .aviso { padding:12px; border-radius:8px; margin-top:10px; font-weight:600; }
+  .aviso.pronto { background:#dff5ec; color:#0a6b50; font-size:1.15rem; }
+  .erro { color:var(--ruim); margin-top:8px; min-height:1.2em; }
+  .oculto { display:none; }
+  .linha-total { display:flex; justify-content:space-between; font-weight:600; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cantina CESAR</h1>
+  <p>Peça antes de descer. O intervalo tem {{ intervalo }} minutos, a fila não precisa comer nenhum.</p>
+</header>
+
+<main>
+  <section aria-labelledby="t-cardapio">
+    <h2 id="t-cardapio">Cardápio de hoje</h2>
+    <div id="cardapio"></div>
+  </section>
+
+  <div style="display:grid; gap:20px; align-content:start;">
+    <section id="painel-pedido" aria-labelledby="t-pedido">
+      <h2 id="t-pedido">Seu pedido</h2>
+      <div class="linha-total"><span>Total</span><span id="total">R$ 0,00</span></div>
+      <div style="margin-top:14px; color:var(--suave)">Fica pronto em cerca de</div>
+      <div class="tempo" id="estimativa">0 min</div>
+      <div class="medidor" aria-hidden="true"><div id="barra"></div></div>
+      <div id="msg-intervalo" style="color:var(--suave)">Escolha itens para ver a estimativa.</div>
+
+      <label for="aluno" style="display:block; margin-top:14px">Seu nome</label>
+      <input type="text" id="aluno" maxlength="40" autocomplete="name">
+
+      <fieldset style="border:0; padding:0; margin:12px 0 0">
+        <legend style="padding:0">Pagamento</legend>
+        <label class="opcao"><input type="radio" name="pag" value="pix" checked> Pix</label>
+        <label class="opcao"><input type="radio" name="pag" value="cartao"> Cartão</label>
+        <label class="opcao"><input type="radio" name="pag" value="dinheiro"> Dinheiro na retirada</label>
+      </fieldset>
+
+      <button class="primario" id="btn-pedir" disabled>Fazer pedido</button>
+      <div class="erro" id="erro" role="alert"></div>
+    </section>
+
+    <section id="painel-acompanhar" class="oculto" aria-live="polite">
+      <h2>Pedido <span id="p-numero"></span></h2>
+      <div id="p-status" class="tempo"></div>
+      <div id="p-detalhe" style="color:var(--suave); margin-top:6px"></div>
+      <div id="p-pagamento" style="margin-top:8px"></div>
+      <div id="p-aviso"></div>
+      <button id="btn-novo" style="margin-top:14px">Fazer outro pedido</button>
+    </section>
+  </div>
+</main>
+
+<script>
+const INTERVALO = {{ intervalo }};
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const brl = v => v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+
+let cardapio = [], carrinho = {}, minutosNaFila = 0, pedidoAtual = null, avisou = false, timer = null;
+
+async function carregar() {
+  cardapio = await (await fetch('/api/cardapio')).json();
+  await atualizarFila();
+  desenharCardapio();
+  const salvo = localStorage.getItem('pedidoAtual');
+  if (salvo) { pedidoAtual = Number(salvo); acompanhar(); }
+}
+
+async function atualizarFila() {
+  const f = await (await fetch('/api/fila')).json();
+  minutosNaFila = f.minutos_na_fila;
+  calcular();
+}
+
+function desenharCardapio() {
+  $('#cardapio').innerHTML = cardapio.map(i => `
+    <div class="item">
+      <div class="nome">${esc(i.nome)}<small>${brl(i.preco)} · ${i.preparo_min} min de preparo</small></div>
+      <div class="qtd">
+        <button data-id="${i.id}" data-d="-1" aria-label="Remover ${esc(i.nome)}">−</button>
+        <span id="q-${i.id}" aria-live="polite">0</span>
+        <button data-id="${i.id}" data-d="1" aria-label="Adicionar ${esc(i.nome)}">+</button>
+      </div>
+    </div>`).join('');
+}
+
+$('#cardapio').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = b.dataset.id, nova = Math.min(10, Math.max(0, (carrinho[id] || 0) + Number(b.dataset.d)));
+  carrinho[id] = nova; $('#q-' + id).textContent = nova;
+  calcular();
+});
+
+function calcular() {
+  let total = 0, preparo = 0, qtd = 0;
+  for (const i of cardapio) { const q = carrinho[i.id] || 0; total += q * i.preco; preparo += q * i.preparo_min; qtd += q; }
+  $('#total').textContent = brl(total);
+  $('#btn-pedir').disabled = qtd === 0;
+  if (qtd === 0) { $('#estimativa').textContent = '0 min'; $('#barra').style.width = '0'; return; }
+  const est = minutosNaFila + preparo;
+  const cls = est <= INTERVALO - 3 ? 'ok' : est <= INTERVALO ? 'alerta' : 'ruim';
+  $('#estimativa').textContent = est + ' min';
+  $('#estimativa').className = 'tempo ' + cls;
+  $('#barra').style.width = Math.min(100, est / INTERVALO * 100) + '%';
+  $('#barra').style.background = `var(--${cls})`;
+  $('#msg-intervalo').textContent = est <= INTERVALO
+    ? `Cabe nos seus ${INTERVALO} minutos de intervalo.`
+    : `Passa do intervalo em ${est - INTERVALO} min. Tente pedir menos itens.`;
+}
+
+$('#btn-pedir').addEventListener('click', async () => {
+  $('#erro').textContent = '';
+  const itens = Object.entries(carrinho).filter(([, q]) => q > 0).map(([id, qtd]) => ({id, qtd}));
+  const corpo = { aluno: $('#aluno').value, itens, pagamento: document.querySelector('input[name=pag]:checked').value };
+  const r = await fetch('/api/pedidos', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo) });
+  const d = await r.json();
+  if (!r.ok) { $('#erro').textContent = d.erro; return; }
+  pedidoAtual = d.numero; avisou = false;
+  localStorage.setItem('pedidoAtual', pedidoAtual);
+  acompanhar();
+});
+
+function acompanhar() {
+  $('#painel-pedido').classList.add('oculto');
+  $('#painel-acompanhar').classList.remove('oculto');
+  clearInterval(timer);
+  consultar(); timer = setInterval(consultar, 3000);
+}
+
+const ROTULO = { aguardando:'Na fila', preparando:'Preparando', pronto:'Pronto!', entregue:'Entregue' };
+
+async function consultar() {
+  const r = await fetch('/api/pedidos/' + pedidoAtual);
+  if (!r.ok) { novo(); return; }
+  const p = await r.json();
+  $('#p-numero').textContent = '#' + p.numero;
+  $('#p-status').textContent = ROTULO[p.status];
+  $('#p-detalhe').textContent = p.itens.join(', ') + ' · ' + brl(p.total) +
+    (p.posicao ? ` · posição ${p.posicao} na fila · ~${p.estimativa_min} min` : '');
+  $('#p-pagamento').textContent = p.pago ? 'Pago (' + p.codigo_pagamento + ')' : 'Pagamento no balcão, na retirada.';
+  const aviso = $('#p-aviso');
+  if (p.status === 'pronto') {
+    aviso.innerHTML = '<div class="aviso pronto">Seu pedido está pronto. Retire no balcão.</div>';
+    if (!avisou) { avisou = true; apitar(); }
+  } else { aviso.innerHTML = ''; }
+  if (p.status === 'entregue') clearInterval(timer);
+}
+
+function apitar() {
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(); o.frequency.value = 880; o.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.35);
+  } catch (e) { /* sem som, tudo bem */ }
+}
+
+function novo() {
+  clearInterval(timer); localStorage.removeItem('pedidoAtual'); pedidoAtual = null; carrinho = {};
+  desenharCardapio(); atualizarFila();
+  $('#painel-acompanhar').classList.add('oculto');
+  $('#painel-pedido').classList.remove('oculto');
+}
+$('#btn-novo').addEventListener('click', novo);
+
+carregar();
+setInterval(() => { if (!pedidoAtual) atualizarFila(); }, 5000);
+</script>
+</body>
+</html>

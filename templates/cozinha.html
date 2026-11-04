@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cantina CESAR · Cozinha</title>
+<style>
+  :root { --tinta:#1b2433; --suave:#5d6a7e; --linha:#d9e0ea; --marca:#2447d6; --ok:#0b8f6c; }
+  body { margin:0; font-family:"Segoe UI", system-ui, sans-serif; background:#f3f6fa; color:var(--tinta); }
+  header { max-width:900px; margin:0 auto; padding:24px 20px 8px; }
+  h1 { margin:0; font-size:1.6rem; }
+  main { max-width:900px; margin:0 auto; padding:0 20px 60px; display:grid; gap:12px; }
+  .pedido { background:#fff; border:1px solid var(--linha); border-left:6px solid var(--linha); border-radius:10px; padding:14px 16px; display:flex; gap:14px; align-items:center; }
+  .pedido.preparando { border-left-color:#c27a00; } .pedido.pronto { border-left-color:var(--ok); }
+  .num { font-size:1.6rem; font-weight:700; min-width:64px; }
+  .info { flex:1; } .info small { color:var(--suave); display:block; }
+  button { font:inherit; cursor:pointer; border-radius:8px; border:1px solid var(--marca); background:var(--marca); color:#fff; padding:10px 14px; font-weight:600; }
+  button:focus-visible { outline:3px solid var(--marca); outline-offset:2px; }
+  .vazio { color:var(--suave); padding:30px 0; }
+</style>
+</head>
+<body>
+<header><h1>Painel da cantina</h1></header>
+<main id="lista" aria-live="polite"></main>
+<script>
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ACAO = { aguardando:'Iniciar preparo', preparando:'Marcar como pronto', pronto:'Entregue ao aluno' };
+
+async function atualizar() {
+  const pedidos = await (await fetch('/api/painel')).json();
+  $lista.innerHTML = pedidos.length ? pedidos.map(p => `
+    <div class="pedido ${p.status}">
+      <div class="num">#${p.numero}</div>
+      <div class="info"><strong>${esc(p.aluno)}</strong>
+        <small>${p.itens.map(esc).join(', ')}</small>
+        <small>${p.pago ? 'Pago' : 'Cobrar no balcão'} · ${esc(p.status)}${p.posicao ? ' · posição ' + p.posicao : ''}</small></div>
+      <button data-n="${p.numero}">${ACAO[p.status]}</button>
+    </div>`).join('') : '<div class="vazio">Nenhum pedido na fila.</div>';
+}
+const $lista = document.getElementById('lista');
+$lista.addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  await fetch(`/api/pedidos/${b.dataset.n}/avancar`, { method:'POST' });
+  atualizar();
+});
+atualizar(); setInterval(atualizar, 3000);
+</script>
+</body>
+</html>
